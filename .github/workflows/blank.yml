@@ -1,13 +1,27 @@
 name: Terraform Deployment
 
 on:
-  workflow_run:
-    workflows: ["Terraform Checkov"]
-    types:
-      - completed
-
+  push:
+    branches:
+     - main
+  workflow_dispatch:
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Checkov
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install checkov
+
+      - name: Run Checkov scan
+        run: checkov -f ./Lab_1/main.tf
+
   deploy:
+    # This job depends on the `check` job and will only run if `check` succeeds
+    needs: check
     runs-on: ubuntu-latest
 
     steps:
@@ -29,15 +43,12 @@ jobs:
 
       - name: Check Terraform and AWS Connection
         run: |
-          # Check Terraform installation
           terraform version
-          # Verify AWS connection
           aws sts get-caller-identity
+
       - name: Apply Terraform
         run: |
           terraform init
           terraform plan
           terraform apply --auto-approve
         working-directory: ./Lab_1
-      
-      
