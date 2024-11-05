@@ -32,4 +32,11 @@ jobs:
           terraform version
           # Verify AWS connection
           aws sts get-caller-identity
+      - name: Apply Terraform
+        run: |
+          terraform init
+          terraform plan
+          terraform apply --auto-approve
+        working-directory: ./Lab_1
+      
       
