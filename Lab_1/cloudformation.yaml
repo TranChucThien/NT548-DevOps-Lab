@@ -1,0 +1,285 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template to create a VPC with Public and Private
+  Subnets, NAT Gateway, and EC2 Instances.
+
+Parameters:
+  VPCCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC
+  PublicSubnetCIDR:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: CIDR block for the Public Subnet
+  PrivateSubnetCIDR:
+    Type: String
+    Default: 10.0.2.0/24
+    Description: CIDR block for the Private Subnet
+  UserIP:
+    Type: String
+    Description: User host IP addr
+
+Resources:
+  # VPC
+  MainVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: MainVPC
+    DeletionPolicy: Delete
+
+  # Public Subnet
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    DependsOn: MainVPC
+    Properties:
+      VpcId: !Ref MainVPC
+      CidrBlock: !Ref PublicSubnetCIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: PublicSubnet
+    DeletionPolicy: Delete
+
+  # Private Subnet
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    DependsOn: MainVPC
+    Properties:
+      VpcId: !Ref MainVPC
+      CidrBlock: !Ref PrivateSubnetCIDR
+      Tags:
+        - Key: Name
+          Value: PrivateSubnet
+    DeletionPolicy: Delete
+
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    DeletionPolicy: Delete
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    DependsOn:
+      - MainVPC
+      - InternetGateway
+    Properties:
+      VpcId: !Ref MainVPC
+      InternetGatewayId: !Ref InternetGateway
+    DeletionPolicy: Delete
+
+  # Default Security Group
+  DefaultSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: MainVPC
+    Properties:
+      GroupDescription: Default security group
+      VpcId: !Ref MainVPC
+      SecurityGroupIngress:
+        - IpProtocol: '-1'
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: DefaultSecurityGroup
+
+  # NAT Gateway EIP
+  NATGatewayEIP:
+    Type: AWS::EC2::EIP
+    DeletionPolicy: Delete
+
+  # NAT Gateway
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    DependsOn:
+      - NATGatewayEIP
+      - PublicSubnet
+    Properties:
+      AllocationId: !GetAtt NATGatewayEIP.AllocationId
+      SubnetId: !Ref PublicSubnet
+    DeletionPolicy: Delete
+
+  # Public Route Table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    DependsOn:
+      - MainVPC
+      - PublicSubnet
+      - InternetGateway
+    Properties:
+      VpcId: !Ref MainVPC
+      Tags:
+        - Key: Name
+          Value: PublicRouteTable
+    DeletionPolicy: Delete
+
+  # Định tuyến traffic từ public subnet ra internet gateway
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - PublicRouteTable
+      - InternetGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+    DeletionPolicy: Delete
+
+  # Liên kết subnet với route table
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn:
+      - PublicSubnet
+      - PublicRouteTable
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+    DeletionPolicy: Delete
+
+  # Private Route Table
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    DependsOn:
+      - MainVPC
+      - PrivateSubnet
+      - NATGateway
+    Properties:
+      VpcId: !Ref MainVPC
+      Tags:
+        - Key: Name
+          Value: PrivateRouteTable
+    DeletionPolicy: Delete
+
+  # Định tuyến traffic từ private subnet ra NAT Gateway
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - PrivateRouteTable
+      - NATGateway
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway
+    DeletionPolicy: Delete
+
+  PrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn:
+      - PrivateSubnet
+      - PrivateRouteTable
+    Properties:
+      SubnetId: !Ref PrivateSubnet
+      RouteTableId: !Ref PrivateRouteTable
+    DeletionPolicy: Delete
+
+  # Security Group cho Public EC2
+  PublicEC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: MainVPC
+    Properties:
+      GroupDescription: Allow SSH access from user IP
+      VpcId: !Ref MainVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref UserIP
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+    DeletionPolicy: Delete
+
+  # Security Group cho Private EC2
+  PrivateEC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn:
+      - MainVPC
+      - PublicEC2SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH access from Public EC2
+      VpcId: !Ref MainVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref PublicEC2SecurityGroup
+        - IpProtocol: tcp
+          FromPort: 23
+          ToPort: 23
+          SourceSecurityGroupId: !Ref PublicEC2SecurityGroup
+
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+    DeletionPolicy: Delete
+
+  # Public EC2 Instance
+  PublicEC2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - PublicSubnet
+      - PublicEC2SecurityGroup
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0e86e20dae9224db8
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds:
+        - !Ref PublicEC2SecurityGroup
+      KeyName: privateinstance
+      Tags:
+        - Key: Name
+          Value: PublicEC2Instance
+    DeletionPolicy: Delete
+
+  # Private EC2 Instance
+  PrivateEC2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - PrivateSubnet
+      - PrivateEC2SecurityGroup
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0e86e20dae9224db8
+      SubnetId: !Ref PrivateSubnet
+      SecurityGroupIds:
+        - !Ref PrivateEC2SecurityGroup
+      KeyName: privateinstance
+      Tags:
+        - Key: Name
+          Value: PrivateEC2Instance
+    DeletionPolicy: Delete
+
+Outputs:
+  VPCID:
+    Description: The ID of the created VPC
+    Value: !Ref MainVPC
+
+  PublicSubnetID:
+    Description: The ID of the Public Subnet
+    Value: !Ref PublicSubnet
+
+  PrivateSubnetID:
+    Description: The ID of the Private Subnet
+    Value: !Ref PrivateSubnet
+
+  PublicEC2InstanceID:
+    Description: The ID of the Public EC2 Instance
+    Value: !Ref PublicEC2Instance
+
+  PrivateEC2InstanceID:
+    Description: The ID of the Private EC2 Instance
+    Value: !Ref PrivateEC2Instance
