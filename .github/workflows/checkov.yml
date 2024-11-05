@@ -30,4 +30,4 @@ jobs:
           python3 -m pip install --upgrade pip
           pip install checkov
       - name: Run Checkov scan
-        run: checkov -d ./Lab_1
+        run: checkov -f ./Lab_1/main.tf
