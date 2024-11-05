@@ -1,9 +1,10 @@
 name: Terraform Deployment
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: ["Terraform Checkov"]
+    types:
+      - completed
 
 jobs:
   deploy:
