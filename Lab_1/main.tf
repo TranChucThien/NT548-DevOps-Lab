@@ -35,6 +35,8 @@ resource "aws_flow_log" "vpc_flow_log" {
   iam_role_arn   = var.iam_role_arn # Ensure an IAM role for VPC Flow Logs
 }
 
+############################  Subnets ############################
+
 # Create public subnet
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
@@ -58,19 +60,12 @@ resource "aws_subnet" "private" {
   }
 }
 
-# Create default security group with descriptions and restrict all traffic by default
+# Restrict all traffic in default security group
 resource "aws_security_group" "default" {
   vpc_id = aws_vpc.main.id
   depends_on = [aws_vpc.main]
 
-  # No ingress rules to restrict all incoming traffic
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow all outbound traffic"
-  }
+  # No ingress or egress rules to block all traffic
 
   tags = {
     Name = "${var.vpc_name}-default-sg"
@@ -87,70 +82,9 @@ resource "aws_internet_gateway" "igw" {
   }
 }
 
-# Create EIP & NAT Gateway for private subnet
-resource "aws_eip" "nat" {
-  vpc = aws_vpc.main.id # Attach EIP to VPC directly
-  depends_on = [aws_internet_gateway.igw]
-}
-
-resource "aws_nat_gateway" "nat" {
-  allocation_id = aws_eip.nat.id
-  subnet_id     = aws_subnet.public.id
-  depends_on    = [aws_subnet.public, aws_eip.nat]
-
-  tags = {
-    Name = "${var.vpc_name}-nat"
-  }
-}
-
-##########################  Route Table ##########################
-
-# Create Route Table for public subnet, route to Internet Gateway
-resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.main.id
-  depends_on = [aws_internet_gateway.igw]
-  
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.igw.id
-  }
-
-  tags = {
-    Name = "${var.vpc_name}-public-rt"
-  }
-}
-
-# Associate Route Table with public subnet
-resource "aws_route_table_association" "public" {
-  subnet_id      = aws_subnet.public.id
-  route_table_id = aws_route_table.public.id
-  depends_on     = [aws_subnet.public, aws_route_table.public]
-}
-
-# Create Route Table for private subnet, route to NAT Gateway
-resource "aws_route_table" "private" {
-  vpc_id = aws_vpc.main.id
-  depends_on = [aws_nat_gateway.nat]
-  
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.nat.id
-  }
-
-  tags = {
-    Name = "${var.vpc_name}-private-rt"
-  }
-}
-
-# Associate Route Table with private subnet
-resource "aws_route_table_association" "private" {
-  subnet_id      = aws_subnet.private.id
-  route_table_id = aws_route_table.private.id
-  depends_on     = [aws_subnet.private, aws_route_table.private]
-}
-
 ########################  Security Groups ########################
 
+# Public EC2 Security Group
 resource "aws_security_group" "public_ec2_sg" {
   vpc_id = aws_vpc.main.id
   depends_on = [aws_vpc.main]
@@ -160,7 +94,7 @@ resource "aws_security_group" "public_ec2_sg" {
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = [var.public_ip]
-    description = "Allow SSH access from my IP"
+    description = "Allow SSH access from specified IP for public instances"
   }
 
   egress {
@@ -168,7 +102,7 @@ resource "aws_security_group" "public_ec2_sg" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow all outbound traffic"
+    description = "Allow all outbound traffic for public instances"
   }
 
   tags = {
@@ -176,6 +110,7 @@ resource "aws_security_group" "public_ec2_sg" {
   }
 }
 
+# Private EC2 Security Group
 resource "aws_security_group" "private_ec2_sg" {
   vpc_id = aws_vpc.main.id
   depends_on = [aws_vpc.main]
@@ -185,7 +120,7 @@ resource "aws_security_group" "private_ec2_sg" {
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = [aws_subnet.public.cidr_block]
-    description = "Allow SSH access from public subnet"
+    description = "Allow SSH access from public subnet for private instances"
   }
 
   ingress {
@@ -193,7 +128,7 @@ resource "aws_security_group" "private_ec2_sg" {
     to_port     = 23
     protocol    = "tcp"
     cidr_blocks = [aws_subnet.public.cidr_block]
-    description = "Allow custom access from public subnet"
+    description = "Allow custom port access from public subnet for private instances"
   }
 
   egress {
@@ -201,7 +136,7 @@ resource "aws_security_group" "private_ec2_sg" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow all outbound traffic"
+    description = "Allow all outbound traffic for private instances"
   }
 
   tags = {
