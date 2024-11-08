@@ -58,19 +58,12 @@ resource "aws_subnet" "private" {
   }
 }
 
-# Create default security group with descriptions
+# Create default security group with descriptions and restrict all traffic by default
 resource "aws_security_group" "default" {
   vpc_id = aws_vpc.main.id
   depends_on = [aws_vpc.main]
 
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.public_ip]
-    description = "Allow SSH from my IP"
-  }
-
+  # No ingress rules to restrict all incoming traffic
   egress {
     from_port   = 0
     to_port     = 0
@@ -235,6 +228,10 @@ resource "aws_instance" "public_instance" {
     http_tokens = "required"
   }
 
+  root_block_device {
+    encrypted = true # Ensures root volume is encrypted
+  }
+
   tags = {
     Name = "${var.vpc_name}-public-instance"
   }
@@ -255,6 +252,10 @@ resource "aws_instance" "private_instance" {
 
   metadata_options {
     http_tokens = "required"
+  }
+
+  root_block_device {
+    encrypted = true # Ensures root volume is encrypted
   }
 
   tags = {
