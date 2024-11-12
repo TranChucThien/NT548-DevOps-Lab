@@ -34,5 +34,6 @@ jobs:
           aws sts get-caller-identity
       - name: Destroy Terraform
         run: |
+          terraform init
           terraform destroy --auto-approve
         working-directory: ./Lab_1
