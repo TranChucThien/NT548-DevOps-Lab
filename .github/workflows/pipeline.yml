@@ -1,4 +1,5 @@
-name: Terraform Deployment
+name: Terraform Pipeline
+
 
 on:
   push:
