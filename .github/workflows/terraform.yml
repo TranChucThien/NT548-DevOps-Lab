@@ -2,10 +2,7 @@
 name: Terraform Deployment
 
 on:
-  workflow_run:
-    workflows: ["Terraform Checkov"]
-    types:
-      - completed
+  workflow_dispatch:
 
 jobs:
   deploy:
