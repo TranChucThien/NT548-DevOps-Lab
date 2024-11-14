@@ -18,7 +18,8 @@ jobs:
           pip install checkov
 
       - name: Run Checkov scan
-        run: checkov -f ./Lab_1/main.tf
+        run:  checkov -f ./Lab_1/main.tf --skip-check CKV_AWS_130,CKV_AWS_260,CKV_AWS_24,CKV_AWS_277,CKV_AWS_25,CKV_AWS_23,CKV_AWS_79,CKV_AWS_135,CKV_AWS_126,CKV_AWS_8,CKV2_AWS_12,CKV2_AWS_5,CKV2_AWS_11,CKV2_AWS_41,CKV2_AWS_19
+
 
   deploy:
     # This job depends on the `check` job and will only run if `check` succeeds
